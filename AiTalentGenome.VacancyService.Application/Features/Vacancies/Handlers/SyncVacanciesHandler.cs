@@ -13,39 +13,54 @@ public class SyncVacanciesHandler(
 {
     public async Task<int> Handle(SyncVacanciesCommand request, CancellationToken ct)
     {
-        // 1. Получаем данные из внешнего API
-        var externalVacancies = await hhService.GetActiveVacanciesAsync(request.AccessToken, ct);
+        // 1. Получаем список "поверхностных" вакансий
+        var briefVacancies = await hhService.GetActiveVacanciesAsync(request.AccessToken, ct);
+        if (!briefVacancies.Any()) return 0;
+
         int syncedCount = 0;
-
-        foreach (var external in externalVacancies)
+        // Ограничиваем параллелизм до 5 запросов, чтобы HH не выдал 429 (Too Many Requests)
+        var semaphore = new SemaphoreSlim(5);
+    
+        var tasks = briefVacancies.Select(async brief =>
         {
-            // 2. Проверяем, есть ли уже такая вакансия в нашей БД
-            var existingVacancy = await unitOfWork.Vacancies.GetByHhIdAsync(external.Id, ct);
+            await semaphore.WaitAsync(ct);
+            try
+            {
+                // 2. Для каждой вакансии тянем ПОЛНЫЕ данные
+                var fullInfo = await hhService.GetVacancyDetailsAsync(request.AccessToken, brief.Id, ct);
+                if (fullInfo == null) return;
 
-            if (existingVacancy != null)
-            {
-                // Обновляем существующую
-                UpdateVacancyFields(existingVacancy, external);
-                unitOfWork.Vacancies.Update(existingVacancy);
-            }
-            else
-            {
-                // Создаем новую
-                var newVacancy = new Vacancy
+                var existingVacancy = await unitOfWork.Vacancies.GetByHhIdAsync(fullInfo.Id, ct);
+
+                if (existingVacancy != null)
                 {
-                    Id = Guid.NewGuid(),
-                    HhId = external.Id,
-                    OwnerId = request.UserId,
-                    CompanyId = request.CompanyId,
-                    CreatedAt = DateTime.UtcNow
-                };
-                UpdateVacancyFields(newVacancy, external);
-                await unitOfWork.Vacancies.AddAsync(newVacancy, ct);
+                    UpdateVacancyFields(existingVacancy, fullInfo);
+                    unitOfWork.Vacancies.Update(existingVacancy);
+                }
+                else
+                {
+                    var newVacancy = new Vacancy
+                    {
+                        Id = Guid.NewGuid(),
+                        HhId = fullInfo.Id,
+                        OwnerId = request.UserId,
+                        CompanyId = request.CompanyId,
+                        CreatedAt = DateTime.UtcNow
+                    };
+                    UpdateVacancyFields(newVacancy, fullInfo);
+                    await unitOfWork.Vacancies.AddAsync(newVacancy, ct);
+                }
+                Interlocked.Increment(ref syncedCount);
             }
-            syncedCount++;
-        }
+            finally
+            {
+                semaphore.Release();
+            }
+        });
 
-        // 3. Сохраняем все изменения одной транзакцией
+        await Task.WhenAll(tasks);
+
+        // 3. Сохраняем всё одним махом
         await unitOfWork.SaveChangesAsync(ct);
         return syncedCount;
     }

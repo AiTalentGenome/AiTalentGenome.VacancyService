@@ -43,6 +43,18 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
         }
     }
 
+    public async Task<HhVacancyDto?> GetVacancyDetailsAsync(string accessToken, string vacancyId, CancellationToken ct = default)
+    {
+        httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+    
+        // Важно: полный JSON вакансии в HH находится по адресу /vacancies/{id}
+        var response = await httpClient.GetAsync($"{BaseUrl}vacancies/{vacancyId}", ct);
+    
+        if (!response.IsSuccessStatusCode) return null;
+
+        return await response.Content.ReadFromJsonAsync<HhVacancyDto>(cancellationToken: ct);
+    }
+
     // Вспомогательные модели для десериализации /me
     private record HhMeResponse(HhEmployer? Employer);
     private record HhEmployer(string Id);
