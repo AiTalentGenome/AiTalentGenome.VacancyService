@@ -2,9 +2,10 @@
 
 public enum ApplicationStatus
 {
-    Submitted, 
-    Reviewing, 
-    Interview, 
-    Accepted, 
-    Rejected
+    Submitted,    // Новый отклик
+    Screening,    // Проверка AI/Рекрутером
+    Interview,    // Собеседование
+    Offered,      // Предложение
+    Rejected,     // Отказ
+    Hired         // Нанят
 }

@@ -39,18 +39,23 @@ public class VacancyDbContext(DbContextOptions<VacancyDbContext> options) : DbCo
         modelBuilder.Entity<Domain.Entities.Application>(entity =>
         {
             entity.HasKey(a => a.Id);
-            
+    
+            // Уникальный индекс для откликов из HH, чтобы не дублировать их
+            entity.HasIndex(a => a.HhNegotiationId).IsUnique().HasFilter("\"HhNegotiationId\" IS NOT NULL");
+
             entity.Property(a => a.CandidateName).IsRequired().HasMaxLength(200);
             entity.Property(a => a.CandidateEmail).IsRequired().HasMaxLength(150);
-            
+    
+            // Храним статус как строку
+            entity.Property(a => a.Status)
+                .HasConversion<string>()
+                .HasMaxLength(50);
+
+            // Связь: Одна вакансия - много откликов
             entity.HasOne(a => a.Vacancy)
                 .WithMany(v => v.Applications)
                 .HasForeignKey(a => a.VacancyId)
                 .OnDelete(DeleteBehavior.Cascade);
-
-            entity.Property(a => a.Status)
-                .HasConversion<string>()
-                .HasMaxLength(50);
         });
     }
 }

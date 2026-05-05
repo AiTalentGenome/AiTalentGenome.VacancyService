@@ -1,7 +1,9 @@
 ﻿using AiTalentGenome.Contracts.Identity;
 using AiTalentGenome.Contracts.Vacancies;
+using AiTalentGenome.VacancyService.Application.Features.Applications.Commands;
 using AiTalentGenome.VacancyService.Application.Features.Vacancies.Commands;
 using AiTalentGenome.VacancyService.Application.Features.Vacancies.Queries;
+using AiTalentGenome.VacancyService.Domain.Interfaces;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using MediatR;
@@ -10,7 +12,7 @@ namespace AiTalentGenome.VacancyService.Grpc.Services;
 
 public class VacancyGrpcService(
     IMediator mediator, 
-    IdentityService.IdentityServiceClient identityClient) : Contracts.Vacancies.VacancyService.VacancyServiceBase
+    IdentityService.IdentityServiceClient identityClient, IUnitOfWork unitOfWork) : Contracts.Vacancies.VacancyService.VacancyServiceBase
 {
     public override async Task<SyncVacanciesResponse> SyncVacanciesWithHh(
         SyncVacanciesRequest request, 
@@ -63,6 +65,39 @@ public class VacancyGrpcService(
         return response;
     }
 
+    public override async Task<ApplicationResponse> AddManualCandidate(AddManualCandidateRequest request, ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.VacancyId, out var vacancyGuid))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid Vacancy ID format"));
+        }
+
+        try
+        {
+            var command = new AddManualCandidateCommand(
+                vacancyGuid,
+                request.CandidateName,
+                request.CandidateEmail,
+                request.CandidatePhone,
+                request.ResumeUrl,
+                request.CoverLetter
+            );
+
+            var applicationId = await mediator.Send(command);
+
+            return new ApplicationResponse
+            {
+                Id = applicationId.ToString(),
+                Status = "Submitted",
+                Message = "Кандидат успешно добавлен вручную"
+            };
+        }
+        catch (KeyNotFoundException)
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, "Вакансия не найдена"));
+        }
+    }
+
     public override async Task<VacancyResponse> GetVacancyById(GetVacancyByIdRequest request, ServerCallContext context)
     {
         if (!Guid.TryParse(request.Id, out var vacancyId))
@@ -91,6 +126,36 @@ public class VacancyGrpcService(
             } : null,
             Experience = result.Experience ?? string.Empty,
             AreaName = result.AreaName ?? string.Empty
+        };
+    }
+
+    public override async Task<SyncApplicationsResponse> SyncApplications(SyncApplicationsRequest request, ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.VacancyId, out var vacancyGuid))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Некорректный ID вакансии"));
+        }
+
+        // 2. Находим вакансию в БД, чтобы получить её внешний HhId
+        var vacancy = await unitOfWork.Vacancies.GetByIdAsync(vacancyGuid);
+        if (vacancy == null || string.IsNullOrEmpty(vacancy.HhId))
+        {
+            throw new RpcException(new Status(StatusCode.NotFound, "Вакансия не найдена или не связана с HH"));
+        }
+
+        // 3. Вызываем команду синхронизации откликов
+        var command = new SyncApplicationsCommand(
+            vacancy.Id, 
+            vacancy.HhId, 
+            request.AccessToken
+        );
+
+        var count = await mediator.Send(command);
+
+        return new SyncApplicationsResponse
+        {
+            SyncedCount = count,
+            Message = $"Синхронизация завершена. Добавлено/обновлено откликов: {count}"
         };
     }
 }
