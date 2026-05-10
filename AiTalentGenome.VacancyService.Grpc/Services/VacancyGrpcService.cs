@@ -11,18 +11,19 @@ using MediatR;
 namespace AiTalentGenome.VacancyService.Grpc.Services;
 
 public class VacancyGrpcService(
-    IMediator mediator, 
-    IdentityService.IdentityServiceClient identityClient, IUnitOfWork unitOfWork) : Contracts.Vacancies.VacancyService.VacancyServiceBase
+    IMediator mediator,
+    IdentityService.IdentityServiceClient identityClient,
+    IUnitOfWork unitOfWork) : Contracts.Vacancies.VacancyService.VacancyServiceBase
 {
     public override async Task<SyncVacanciesResponse> SyncVacanciesWithHh(
-        SyncVacanciesRequest request, 
+        SyncVacanciesRequest request,
         ServerCallContext context)
     {
         // 1. Сначала идем в IdentityService, чтобы получить ID пользователя и компании по токену
         // Это важно, так как в VacancyService нам нужно знать, к кому привязывать вакансии
-        var userInfo = await identityClient.GetUserInfoAsync(new GetUserInfoRequest 
-        { 
-            AccessToken = request.AccessToken 
+        var userInfo = await identityClient.GetUserInfoAsync(new GetUserInfoRequest
+        {
+            AccessToken = request.AccessToken
         });
 
         if (!userInfo.IsActive)
@@ -32,8 +33,8 @@ public class VacancyGrpcService(
 
         // 2. Вызываем команду синхронизации в Application слое
         var command = new SyncVacanciesCommand(
-            request.AccessToken, 
-            userInfo.Id, 
+            request.AccessToken,
+            userInfo.Id,
             userInfo.Id // В твоей схеме CompanyId и UserId могут отличаться, подставь нужное
         );
 
@@ -46,13 +47,14 @@ public class VacancyGrpcService(
         };
     }
 
-    public override async Task<GetVacanciesResponse> GetVacancies(GetVacanciesRequest request, ServerCallContext context)
+    public override async Task<GetVacanciesResponse> GetVacancies(GetVacanciesRequest request,
+        ServerCallContext context)
     {
         var result = await mediator.Send(new GetVacanciesQuery(request.OnlyActive));
 
         // 2. Маппим результат в gRPC сообщение
         var response = new GetVacanciesResponse();
-    
+
         response.Vacancies.AddRange(result.Select(v => new VacancyShort
         {
             Id = v.Id.ToString(),
@@ -65,7 +67,8 @@ public class VacancyGrpcService(
         return response;
     }
 
-    public override async Task<ApplicationResponse> AddManualCandidate(AddManualCandidateRequest request, ServerCallContext context)
+    public override async Task<ApplicationResponse> AddManualCandidate(AddManualCandidateRequest request,
+        ServerCallContext context)
     {
         if (!Guid.TryParse(request.VacancyId, out var vacancyGuid))
         {
@@ -118,18 +121,21 @@ public class VacancyGrpcService(
             Title = result.Title,
             Description = result.Description,
             KeySkills = { result.KeySkills },
-            Salary = result.Salary != null ? new Salary
-            {
-                From = result.Salary.From ?? 0,
-                To = result.Salary.To ?? 0,
-                Currency = result.Salary.Currency ?? string.Empty
-            } : null,
+            Salary = result.Salary != null
+                ? new Salary
+                {
+                    From = result.Salary.From ?? 0,
+                    To = result.Salary.To ?? 0,
+                    Currency = result.Salary.Currency ?? string.Empty
+                }
+                : null,
             Experience = result.Experience ?? string.Empty,
             AreaName = result.AreaName ?? string.Empty
         };
     }
 
-    public override async Task<SyncApplicationsResponse> SyncApplications(SyncApplicationsRequest request, ServerCallContext context)
+    public override async Task<SyncApplicationsResponse> SyncApplications(SyncApplicationsRequest request,
+        ServerCallContext context)
     {
         if (!Guid.TryParse(request.VacancyId, out var vacancyGuid))
         {
@@ -145,8 +151,8 @@ public class VacancyGrpcService(
 
         // 3. Вызываем команду синхронизации откликов
         var command = new SyncApplicationsCommand(
-            vacancy.Id, 
-            vacancy.HhId, 
+            vacancy.Id,
+            vacancy.HhId,
             request.AccessToken
         );
 
@@ -156,6 +162,79 @@ public class VacancyGrpcService(
         {
             SyncedCount = count,
             Message = $"Синхронизация завершена. Добавлено/обновлено откликов: {count}"
+        };
+    }
+
+    public override async Task<VacancyResponse> CreateVacancyFromFile(UploadFileRequest request,
+        ServerCallContext context)
+    {
+        // 1. Получаем инфо о пользователе через Identity (как в синхронизации)
+        var userInfo = await identityClient.GetUserInfoAsync(new GetUserInfoRequest
+        {
+            AccessToken = request.AccessToken
+        });
+
+        if (!userInfo.IsActive)
+        {
+            throw new RpcException(new Status(StatusCode.Unauthenticated, "Пользователь не активен"));
+        }
+
+        // 2. Отправляем команду в Application слой
+        var command = new CreateVacancyFromFileCommand(
+            request.FileContent.ToByteArray(),
+            request.Extension,
+            userInfo.Id, // OwnerId
+            userInfo.Id // CompanyId (или userInfo.CompanyId, если есть в контракте)
+        );
+
+        var vacancyId = await mediator.Send(command, context.CancellationToken);
+
+        // 3. Получаем созданную вакансию, чтобы вернуть её данные (или вызываем GetVacancyByIdQuery)
+        var result = await mediator.Send(new GetVacancyByIdQuery(vacancyId));
+
+        return new VacancyResponse
+        {
+            Id = result.Id.ToString(),
+            Title = result.Title,
+            Description = result.Description,
+            KeySkills = { result.KeySkills },
+            Salary = result.Salary != null
+                ? new Salary
+                {
+                    From = result.Salary.From ?? 0,
+                    To = result.Salary.To ?? 0,
+                    Currency = result.Salary.Currency ?? "KZT"
+                }
+                : null,
+            Experience = result.Experience ?? string.Empty,
+            AreaName = result.AreaName ?? string.Empty
+        };
+    }
+
+    public override async Task<ApplicationResponse> AddCandidateFromFile(UploadCandidateFileRequest request,
+        ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.VacancyId, out var vacancyGuid))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Некорректный формат GUID вакансии"));
+        }
+
+        // Здесь токен не обязателен, если мы просто добавляем кандидата к вакансии, 
+        // но можно добавить проверку прав доступа к вакансии.
+
+        var command = new AddCandidateFromResumeCommand(
+            vacancyGuid,
+            request.FileContent.ToByteArray(),
+            request.Extension
+        );
+
+        var applicationId = await mediator.Send(command, context.CancellationToken);
+
+        return new ApplicationResponse
+        {
+            Id = applicationId.ToString(),
+            Status = "Submitted",
+            Message = "Кандидат успешно извлечен из файла и добавлен"
         };
     }
 }

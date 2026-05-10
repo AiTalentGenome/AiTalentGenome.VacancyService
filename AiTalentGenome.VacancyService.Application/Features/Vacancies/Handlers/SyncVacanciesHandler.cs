@@ -4,12 +4,14 @@ using AiTalentGenome.VacancyService.Application.Interfaces;
 using AiTalentGenome.VacancyService.Domain.Entities;
 using AiTalentGenome.VacancyService.Domain.Interfaces;
 using MediatR;
+using Microsoft.Extensions.DependencyInjection;
 
 namespace AiTalentGenome.VacancyService.Application.Features.Vacancies.Handlers;
 
 public class SyncVacanciesHandler(
     IUnitOfWork unitOfWork, 
-    IHeadHunterService hhService) : IRequestHandler<SyncVacanciesCommand, int>
+    IHeadHunterService hhService,
+    IServiceScopeFactory scopeFactory) : IRequestHandler<SyncVacanciesCommand, int>
 {
     public async Task<int> Handle(SyncVacanciesCommand request, CancellationToken ct)
     {
@@ -26,16 +28,20 @@ public class SyncVacanciesHandler(
             await semaphore.WaitAsync(ct);
             try
             {
-                // 2. Для каждой вакансии тянем ПОЛНЫЕ данные
+                // СОЗДАЕМ НОВЫЙ SCOPE ДЛЯ КАЖДОЙ ЗАДАЧИ
+                using var scope = scopeFactory.CreateScope();
+                // Достаем UnitOfWork именно из этого scope
+                var scopedUnitOfWork = scope.ServiceProvider.GetRequiredService<IUnitOfWork>();
+
                 var fullInfo = await hhService.GetVacancyDetailsAsync(request.AccessToken, brief.Id, ct);
                 if (fullInfo == null) return;
 
-                var existingVacancy = await unitOfWork.Vacancies.GetByHhIdAsync(fullInfo.Id, ct);
+                var existingVacancy = await scopedUnitOfWork.Vacancies.GetByHhIdAsync(fullInfo.Id, ct);
 
                 if (existingVacancy != null)
                 {
                     UpdateVacancyFields(existingVacancy, fullInfo);
-                    unitOfWork.Vacancies.Update(existingVacancy);
+                    scopedUnitOfWork.Vacancies.Update(existingVacancy);
                 }
                 else
                 {
@@ -48,8 +54,11 @@ public class SyncVacanciesHandler(
                         CreatedAt = DateTime.UtcNow
                     };
                     UpdateVacancyFields(newVacancy, fullInfo);
-                    await unitOfWork.Vacancies.AddAsync(newVacancy, ct);
+                    await scopedUnitOfWork.Vacancies.AddAsync(newVacancy, ct);
                 }
+
+                // Сохраняем изменения сразу для этого потока
+                await scopedUnitOfWork.SaveChangesAsync(ct);
                 Interlocked.Increment(ref syncedCount);
             }
             finally

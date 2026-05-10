@@ -11,6 +11,7 @@
     </ItemGroup>
 
     <ItemGroup>
+      <PackageReference Include="AiTalentGenome.Contracts" Version="1.0.12" />
       <PackageReference Include="MediatR" Version="14.1.0" />
     </ItemGroup>
 

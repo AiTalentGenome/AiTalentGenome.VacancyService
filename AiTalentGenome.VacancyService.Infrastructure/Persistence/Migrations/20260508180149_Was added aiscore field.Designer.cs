@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using AiTalentGenome.VacancyService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(VacancyDbContext))]
-    partial class VacancyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260508180149_Was added aiscore field")]
+    partial class Wasaddedaiscorefield
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -28,9 +31,6 @@ namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
                     b.Property<Guid>("Id")
                         .ValueGeneratedOnAdd()
                         .HasColumnType("uuid");
-
-                    b.Property<string>("AiAnalysisJson")
-                        .HasColumnType("text");
 
                     b.Property<double?>("AiScore")
                         .HasColumnType("double precision");
@@ -54,34 +54,10 @@ namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
                     b.Property<string>("CandidatePhone")
                         .HasColumnType("text");
 
-                    b.PrimitiveCollection<List<string>>("CandidateSkills")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text[]")
-                        .HasDefaultValue(new List<string>());
-
                     b.Property<string>("CoverLetter")
                         .HasColumnType("text");
 
-                    b.PrimitiveCollection<List<string>>("CriticalMismatches")
-                        .IsRequired()
-                        .ValueGeneratedOnAdd()
-                        .HasColumnType("text[]")
-                        .HasDefaultValue(new List<string>());
-
-                    b.Property<string>("Education")
-                        .HasColumnType("text");
-
                     b.Property<string>("HhNegotiationId")
-                        .HasColumnType("text");
-
-                    b.Property<string>("LastCompany")
-                        .HasColumnType("text");
-
-                    b.Property<string>("LastJobTitle")
-                        .HasColumnType("text");
-
-                    b.Property<string>("RawResumeText")
                         .HasColumnType("text");
 
                     b.Property<string>("ResumeUrl")
@@ -91,9 +67,6 @@ namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasMaxLength(50)
                         .HasColumnType("character varying(50)");
-
-                    b.Property<int?>("TotalExperienceMonths")
-                        .HasColumnType("integer");
 
                     b.Property<Guid>("VacancyId")
                         .HasColumnType("uuid");

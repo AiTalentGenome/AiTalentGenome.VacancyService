@@ -56,6 +56,15 @@ public class VacancyDbContext(DbContextOptions<VacancyDbContext> options) : DbCo
                 .WithMany(v => v.Applications)
                 .HasForeignKey(a => a.VacancyId)
                 .OnDelete(DeleteBehavior.Cascade);
+            
+            entity.Property(a => a.CandidateSkills)
+                .HasColumnType("text[]")
+                .HasDefaultValue(new List<string>());
+
+            // Критические несовпадения
+            entity.Property(a => a.CriticalMismatches)
+                .HasColumnType("text[]")
+                .HasDefaultValue(new List<string>());
         });
     }
 }
