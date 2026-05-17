@@ -6,5 +6,9 @@ public record HhApplicationDto(
     string FullName,
     string? Position,
     string? ResumeUrl,
-    string? StateId
+    string? StateId,
+    string? Email,  // Добавлено
+    string? Phone,  // Добавлено,
+    string? CoverLetter,
+    List<string> Skills
 );

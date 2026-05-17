@@ -1,10 +1,9 @@
-﻿namespace AiTalentGenome.VacancyService.Application.DTOs;
+﻿namespace AiTalentGenome.VacancyService.Domain.Entities;
 
-public record VacancyShortDto(
+public record VacancySummary(
     Guid Id,
     string? HhId,
     string Title,
-    string? EmployerName,
     DateTime CreatedAt,
     string? AreaName,
     bool IsActive,

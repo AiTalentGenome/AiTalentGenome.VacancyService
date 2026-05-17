@@ -7,5 +7,6 @@ public record VacancyDetailDto(
     List<string> KeySkills,
     SalaryDto? Salary,
     string? Experience,
-    string? AreaName
+    string? AreaName,
+    string? HhId
 );

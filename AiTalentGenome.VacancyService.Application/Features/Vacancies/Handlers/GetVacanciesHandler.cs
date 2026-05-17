@@ -10,14 +10,19 @@ public class GetVacanciesHandler(IUnitOfWork unitOfWork)
 {
     public async Task<List<VacancyShortDto>> Handle(GetVacanciesQuery request, CancellationToken ct)
     {
-        var vacancies = await unitOfWork.Vacancies.GetAllAsync(request.OnlyActive, ct);
+        // 1. Получаем модели из Domain
+        var summaries = await unitOfWork.Vacancies.GetSummariesAsync(request.OnlyActive, ct);
 
-        return vacancies.Select(v => new VacancyShortDto(
-            v.Id,
-            v.HhId,
-            v.Title,
-            "Ваша компания", // В будущем можно брать из профиля компании
-            v.CreatedAt
+        // 2. Превращаем их в DTO (здесь можно добавить название компании и т.д.)
+        return summaries.Select(s => new VacancyShortDto(
+            s.Id,
+            s.HhId,
+            s.Title,
+            "Ваша компания", 
+            s.CreatedAt,
+            s.AreaName ?? "Не указан", 
+            s.IsActive,
+            s.ApplicationsCount
         )).ToList();
     }
 }

@@ -1,12 +1,17 @@
 ﻿using AiTalentGenome.Contracts.Identity;
 using AiTalentGenome.Contracts.Vacancies;
 using AiTalentGenome.VacancyService.Application.Features.Applications.Commands;
+using AiTalentGenome.VacancyService.Application.Features.Applications.Queries;
 using AiTalentGenome.VacancyService.Application.Features.Vacancies.Commands;
 using AiTalentGenome.VacancyService.Application.Features.Vacancies.Queries;
+using AiTalentGenome.VacancyService.Domain.Enums;
 using AiTalentGenome.VacancyService.Domain.Interfaces;
 using Google.Protobuf.WellKnownTypes;
 using Grpc.Core;
 using MediatR;
+using DomainStatus = AiTalentGenome.VacancyService.Domain.Enums.ApplicationStatus;
+using ContractStatus = AiTalentGenome.Contracts.Vacancies.ApplicationStatus;
+using Enum = Google.Protobuf.WellKnownTypes.Enum;
 
 namespace AiTalentGenome.VacancyService.Grpc.Services;
 
@@ -54,14 +59,17 @@ public class VacancyGrpcService(
 
         // 2. Маппим результат в gRPC сообщение
         var response = new GetVacanciesResponse();
-
+        
         response.Vacancies.AddRange(result.Select(v => new VacancyShort
         {
             Id = v.Id.ToString(),
             HhId = v.HhId ?? string.Empty,
             Title = v.Title,
             EmployerName = v.EmployerName ?? string.Empty,
-            CreatedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(v.CreatedAt, DateTimeKind.Utc))
+            CreatedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(v.CreatedAt, DateTimeKind.Utc)),
+            AreaName = v.AreaName ?? string.Empty,
+            IsActive = v.IsActive,
+            ApplicationsCount = v.ApplicationsCount
         }));
 
         return response;
@@ -91,7 +99,7 @@ public class VacancyGrpcService(
             return new ApplicationResponse
             {
                 Id = applicationId.ToString(),
-                Status = "Submitted",
+                Status = ContractStatus.Submitted,
                 Message = "Кандидат успешно добавлен вручную"
             };
         }
@@ -130,7 +138,8 @@ public class VacancyGrpcService(
                 }
                 : null,
             Experience = result.Experience ?? string.Empty,
-            AreaName = result.AreaName ?? string.Empty
+            AreaName = result.AreaName ?? string.Empty,
+            HhId = result.HhId ?? string.Empty
         };
     }
 
@@ -207,7 +216,8 @@ public class VacancyGrpcService(
                 }
                 : null,
             Experience = result.Experience ?? string.Empty,
-            AreaName = result.AreaName ?? string.Empty
+            AreaName = result.AreaName ?? string.Empty,
+            HhId = result.HhId ?? string.Empty
         };
     }
 
@@ -233,8 +243,92 @@ public class VacancyGrpcService(
         return new ApplicationResponse
         {
             Id = applicationId.ToString(),
-            Status = "Submitted",
+            Status = ContractStatus.Submitted,
             Message = "Кандидат успешно извлечен из файла и добавлен"
         };
+    }
+    
+    public override async Task<GetApplicationsResponse> GetApplicationsByVacancy(
+        GetApplicationsRequest request, 
+        ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.VacancyId, out var vacancyId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid ID"));
+        }
+
+        // 1. ЕслиStatuses в proto — это repeated ApplicationStatus, 
+        // то s — это уже числовой тип enum в C#
+        var statusFilters = request.Statuses
+            .Select(s => (DomainStatus)(int)s) 
+            .ToList();
+
+        var query = new GetApplicationsByVacancyQuery(vacancyId, statusFilters, request.OnlyAnalyzed);
+        var result = await mediator.Send(query);
+
+        var response = new GetApplicationsResponse();
+        response.Applications.AddRange(result.Select(a => new ApplicationDetail
+        {
+            Id = a.Id.ToString(),
+            CandidateName = a.CandidateName,
+            CandidateEmail = a.CandidateEmail,
+            LastJobTitle = a.LastJobTitle ?? "Не указано",
+            TotalExperienceMonths = a.TotalExperienceMonths ?? 0,
+            AiScore = a.AiScore ?? 0,
+            
+            // ИСПРАВЛЕНИЕ: Прямое приведение Domain Enum -> Contract Enum через int
+            Status = (ContractStatus)(int)a.Status, 
+            
+            CandidateSkills = { a.CandidateSkills },
+            AppliedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(a.AppliedAt, DateTimeKind.Utc))
+        }));
+
+        return response;
+    }
+    
+    public override async Task<GetPagedApplicationsResponse> GetPagedApplicationsByVacancy(
+        GetPagedApplicationsRequest request, 
+        ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.VacancyId, out var vacancyId))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Некорректный формат GUID вакансии"));
+        }
+
+        // Маппинг контрактов enum в доменные enum
+        var statusFilters = request.Statuses
+            .Select(s => (DomainStatus)(int)s) 
+            .ToList();
+
+        // Вызываем новый Query
+        var query = new GetPagedApplicationsByVacancyQuery(
+            vacancyId,
+            request.Page,
+            request.PageSize,
+            statusFilters,
+            request.OnlyAnalyzed
+        );
+
+        var result = await mediator.Send(query, context.CancellationToken);
+
+        var response = new GetPagedApplicationsResponse
+        {
+            TotalCount = result.TotalCount
+        };
+
+        response.Applications.AddRange(result.Items.Select(a => new ApplicationDetail
+        {
+            Id = a.Id.ToString(),
+            CandidateName = a.CandidateName,
+            CandidateEmail = a.CandidateEmail,
+            LastJobTitle = a.LastJobTitle,
+            TotalExperienceMonths = a.TotalExperienceMonths ?? 0,
+            AiScore = a.AiScore ?? 0.0,
+            Status = (ContractStatus)(int)a.Status, // Прямой маппинг
+            CandidateSkills = { a.CandidateSkills },
+            AppliedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(a.AppliedAt, DateTimeKind.Utc))
+        }));
+
+        return response;
     }
 }

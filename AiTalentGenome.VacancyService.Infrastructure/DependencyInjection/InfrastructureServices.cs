@@ -4,6 +4,9 @@ using AiTalentGenome.VacancyService.Domain.Interfaces;
 using AiTalentGenome.VacancyService.Infrastructure.Clients;
 using AiTalentGenome.VacancyService.Infrastructure.Persistence;
 using AiTalentGenome.VacancyService.Infrastructure.Repositories;
+using AiTalentGenome.VacancyService.Infrastructure.Services;
+using Hangfire;
+using Hangfire.PostgreSql;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
 using Microsoft.Extensions.DependencyInjection;
@@ -14,6 +17,7 @@ namespace AiTalentGenome.VacancyService.Infrastructure.DependencyInjection;
 
 public static class InfrastructureServices
 {
+    [Obsolete("Obsolete")]
     public static void AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection");
@@ -35,6 +39,18 @@ public static class InfrastructureServices
             .AddPolicyHandler(GetRetryPolicy());
 
         services.AddScoped<IDocumentParserClient, DocumentParserClient>();
+        
+        services.AddScoped<ICandidateAnalysisService, CandidateAnalysisService>();
+        services.AddHangfire(config => config
+            .SetDataCompatibilityLevel(CompatibilityLevel.Version_180)
+            .UseSimpleAssemblyNameTypeSerializer()
+            .UseRecommendedSerializerSettings()
+            .UsePostgreSqlStorage(configuration.GetConnectionString("DefaultConnection")));
+        
+        services.AddHangfireServer(options =>
+        {
+            options.WorkerCount = 1; // Для начала 1 поток, чтобы HH не забанил за частые запросы
+        });
     }
     
     private static IAsyncPolicy<HttpResponseMessage> GetRetryPolicy()

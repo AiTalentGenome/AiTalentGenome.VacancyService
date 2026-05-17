@@ -21,7 +21,8 @@ public class GetVacancyByIdHandler(IUnitOfWork unitOfWork)
             vacancy.KeySkills,
             vacancy.Salary != null ? new SalaryDto(vacancy.Salary.From, vacancy.Salary.To, vacancy.Salary.Currency) : null,
             vacancy.Experience,
-            vacancy.AreaName
+            vacancy.AreaName,
+            vacancy.HhId
         );
     }
 }

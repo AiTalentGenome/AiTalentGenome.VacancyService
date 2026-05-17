@@ -39,6 +39,8 @@ public class Application
 
     // Образование (например: "Высшее, МГТУ им. Баумана")
     public string? Education { get; set; }
+    
+    public string? HhResumeId { get; set; }
 
     // --- РАСШИРЕННЫЕ МЕТАДАННЫЕ AI ---
 
