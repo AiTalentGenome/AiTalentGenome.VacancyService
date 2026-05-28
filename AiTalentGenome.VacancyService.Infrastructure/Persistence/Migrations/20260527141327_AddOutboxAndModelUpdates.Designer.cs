@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using AiTalentGenome.VacancyService.Infrastructure.Persistence;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 
@@ -12,9 +13,11 @@ using Npgsql.EntityFrameworkCore.PostgreSQL.Metadata;
 namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
 {
     [DbContext(typeof(VacancyDbContext))]
-    partial class VacancyDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260527141327_AddOutboxAndModelUpdates")]
+    partial class AddOutboxAndModelUpdates
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -56,14 +59,18 @@ namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
 
                     b.PrimitiveCollection<List<string>>("CandidateSkills")
                         .IsRequired()
-                        .HasColumnType("text[]");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValue(new List<string>());
 
                     b.Property<string>("CoverLetter")
                         .HasColumnType("text");
 
                     b.PrimitiveCollection<List<string>>("CriticalMismatches")
                         .IsRequired()
-                        .HasColumnType("text[]");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValue(new List<string>());
 
                     b.Property<string>("Education")
                         .HasColumnType("text");
@@ -166,7 +173,9 @@ namespace AiTalentGenome.VacancyService.Infrastructure.Persistence.Migrations
 
                     b.PrimitiveCollection<List<string>>("KeySkills")
                         .IsRequired()
-                        .HasColumnType("text[]");
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("text[]")
+                        .HasDefaultValue(new List<string>());
 
                     b.Property<long>("OwnerId")
                         .HasColumnType("bigint");

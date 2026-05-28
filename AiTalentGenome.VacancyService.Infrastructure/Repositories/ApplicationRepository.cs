@@ -33,7 +33,6 @@ public class ApplicationRepository(VacancyDbContext context) : IApplicationRepos
             .AsNoTracking()
             .Where(a => a.VacancyId == vacancyId);
 
-        // Применяем те же фильтры
         if (statuses != null && statuses.Count > 0)
         {
             query = query.Where(a => statuses.Contains(a.Status));
@@ -44,18 +43,15 @@ public class ApplicationRepository(VacancyDbContext context) : IApplicationRepos
             query = query.Where(a => a.AiScore != null);
         }
 
-        // 1. Считаем общее количество подходящих записей в БД (до пагинации)
         var totalCount = await query.CountAsync(ct);
 
-        // 2. Делаем сортировку и выбираем нужный кусок (страницу) данных
         var items = await query
-            .OrderByDescending(a => a.AiScore) // Сначала лучшие по AI-скору
-            .ThenByDescending(a => a.AppliedAt) // Затем самые свежие
-            .Skip((page - 1) * pageSize)       // Пропускаем предыдущие страницы
-            .Take(pageSize)                    // Берем размер страницы
+            .OrderByDescending(a => a.AiScore)
+            .ThenByDescending(a => a.AppliedAt)
+            .Skip((page - 1) * pageSize)
+            .Take(pageSize)
             .ToListAsync(ct);
 
-        // Возвращаем именованный кортеж
         return (Items: items, TotalCount: totalCount);
     }
     

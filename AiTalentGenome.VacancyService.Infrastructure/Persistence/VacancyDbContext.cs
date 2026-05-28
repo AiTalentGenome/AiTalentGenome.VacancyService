@@ -7,7 +7,7 @@ public class VacancyDbContext(DbContextOptions<VacancyDbContext> options) : DbCo
 {
     public DbSet<Vacancy> Vacancies => Set<Vacancy>();
     public DbSet<Domain.Entities.Application> Applications => Set<Domain.Entities.Application>();
-
+    public DbSet<OutboxMessage> OutboxMessages => Set<OutboxMessage>();
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
         base.OnModelCreating(modelBuilder);
@@ -29,8 +29,7 @@ public class VacancyDbContext(DbContextOptions<VacancyDbContext> options) : DbCo
             });
 
             entity.Property(v => v.KeySkills)
-                .HasColumnType("text[]")
-                .HasDefaultValue(new List<string>());
+                .HasColumnType("text[]");
 
             entity.Property(v => v.OwnerId).IsRequired();
             entity.Property(v => v.CompanyId).IsRequired();
@@ -57,14 +56,12 @@ public class VacancyDbContext(DbContextOptions<VacancyDbContext> options) : DbCo
                 .HasForeignKey(a => a.VacancyId)
                 .OnDelete(DeleteBehavior.Cascade);
             
+            // В блоке entity.HasKey(a => a.Id) для Application:
             entity.Property(a => a.CandidateSkills)
-                .HasColumnType("text[]")
-                .HasDefaultValue(new List<string>());
+                .HasColumnType("text[]"); // Убрали HasDefaultValue
 
-            // Критические несовпадения
             entity.Property(a => a.CriticalMismatches)
-                .HasColumnType("text[]")
-                .HasDefaultValue(new List<string>());
+                .HasColumnType("text[]");
         });
     }
 }

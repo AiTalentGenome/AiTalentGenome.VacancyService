@@ -17,7 +17,6 @@ namespace AiTalentGenome.VacancyService.Infrastructure.DependencyInjection;
 
 public static class InfrastructureServices
 {
-    [Obsolete("Obsolete")]
     public static void AddInfrastructureServices(this IServiceCollection services, IConfiguration configuration)
     {
         var connectionString = configuration.GetConnectionString("DefaultConnection");
