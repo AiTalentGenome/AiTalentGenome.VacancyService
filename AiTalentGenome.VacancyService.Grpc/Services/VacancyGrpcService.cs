@@ -331,4 +331,35 @@ public class VacancyGrpcService(
 
         return response;
     }
+    
+    public override async Task<StartAiAnalysisResponse> StartAiAnalysis(
+        StartAiAnalysisRequest request, 
+        ServerCallContext context)
+    {
+        if (!Guid.TryParse(request.VacancyId, out var vacancyGuid))
+        {
+            throw new RpcException(new Status(StatusCode.InvalidArgument, "Invalid Vacancy ID format"));
+        }
+
+        var appGuids = request.ApplicationIds
+            .Select(id => Guid.TryParse(id, out var g) ? g : Guid.Empty)
+            .Where(g => g != Guid.Empty)
+            .ToList();
+
+        // Передаем request.AccessToken в конструктор команды
+        var command = new StartAiAnalysisCommand(vacancyGuid, appGuids, request.UserCriteria, request.AccessToken);
+        var analyzedDtoList = await mediator.Send(command);
+
+        var response = new StartAiAnalysisResponse();
+    
+        response.Results.AddRange(analyzedDtoList.Select(r => new AnalyzedApplicationResult
+        {
+            ApplicationId = r.ApplicationId.ToString(),
+            AiScore = r.AiScore,
+            AiAnalysisJson = r.AiAnalysisJson,
+            CandidateSkills = { r.CandidateSkills }
+        }));
+
+        return response;
+    }
 }

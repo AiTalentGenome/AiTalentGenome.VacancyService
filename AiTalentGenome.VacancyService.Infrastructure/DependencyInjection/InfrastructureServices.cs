@@ -1,4 +1,5 @@
-﻿using AiTalentGenome.Contracts.Parser;
+﻿using AiTalentGenome.Contracts.Analyzer;
+using AiTalentGenome.Contracts.Parser;
 using AiTalentGenome.VacancyService.Application.Interfaces;
 using AiTalentGenome.VacancyService.Domain.Interfaces;
 using AiTalentGenome.VacancyService.Infrastructure.Clients;
@@ -31,11 +32,19 @@ public static class InfrastructureServices
         services.AddScoped<IApplicationRepository, ApplicationRepository>(); // Реализуется аналогично VacancyRepository
         services.AddScoped<IUnitOfWork, UnitOfWork>();
         
+        services.AddScoped<ICandidateAnalysisService, CandidateAnalysisService>();
+        
         services.AddGrpcClient<DocumentParser.DocumentParserClient>(o =>
             {
                 o.Address = new Uri(configuration["Services:ParserUrl"]!); 
             })
             .AddPolicyHandler(GetRetryPolicy());
+        
+        services.AddGrpcClient<AnalyzerService.AnalyzerServiceClient>(options =>
+        {
+            options.Address = new Uri(configuration["Services:AnalyzerServiceUrl"]!);
+        })
+        .AddPolicyHandler(GetRetryPolicy());
 
         services.AddScoped<IDocumentParserClient, DocumentParserClient>();
         
