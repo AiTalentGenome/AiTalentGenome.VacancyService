@@ -144,7 +144,7 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
         return new List<string>();
     }
 
-    public async Task<string?> GetResumeRawTextAsync(string accessToken, string resumeId,
+    public async Task<HhResumeEnrichedResult?> GetResumeRawTextAsync(string accessToken, string resumeId,
         CancellationToken ct = default)
     {
         SetAuthHeaders(accessToken);
@@ -167,6 +167,11 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
 
             var sb = new System.Text.StringBuilder();
 
+            string? lastJobTitle = null;
+            string? lastCompany = null;
+            int? totalExperienceMonths = null;
+            string? educationLevel = null;
+
             // 1. Основная информация
             if (root.TryGetProperty("title", out var title) && title.ValueKind == JsonValueKind.String)
             {
@@ -188,19 +193,37 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
                 }
             }
 
-            // 3. Опыт работы
+            // 3. Опыт работы (Извлекаем метаданные)
             if (root.TryGetProperty("experience", out var experienceList) &&
                 experienceList.ValueKind == JsonValueKind.Array)
             {
                 sb.AppendLine("\n=== ОПЫТ РАБОТЫ ===");
-                foreach (var exp in experienceList.EnumerateArray())
+                var experiences = experienceList.EnumerateArray().ToList();
+
+                // HH возвращает опыт в хронологическом порядке (сверху самое последнее место работы)
+                if (experiences.Count > 0 && experiences[0].ValueKind == JsonValueKind.Object)
+                {
+                    var latestExp = experiences[0];
+                    lastJobTitle =
+                        latestExp.TryGetProperty("position", out var pos) && pos.ValueKind == JsonValueKind.String
+                            ? pos.GetString()
+                            : null;
+                    lastCompany =
+                        latestExp.TryGetProperty("company", out var comp) && comp.ValueKind == JsonValueKind.Object &&
+                        comp.TryGetProperty("name", out var cn)
+                            ? cn.GetString()
+                            : null;
+                }
+
+                foreach (var exp in experiences)
                 {
                     if (exp.ValueKind != JsonValueKind.Object) continue;
 
-                    var companyName = exp.TryGetProperty("company", out var comp) &&
-                                      comp.ValueKind == JsonValueKind.Object && comp.TryGetProperty("name", out var cn)
-                        ? cn.GetString()
-                        : "Не указана";
+                    var companyName =
+                        exp.TryGetProperty("company", out var comp) && comp.ValueKind == JsonValueKind.Object &&
+                        comp.TryGetProperty("name", out var cn)
+                            ? cn.GetString()
+                            : "Не указана";
                     var position = exp.TryGetProperty("position", out var pos) && pos.ValueKind == JsonValueKind.String
                         ? pos.GetString()
                         : "Не указана";
@@ -227,6 +250,15 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
                 }
             }
 
+            // Подсчет общего стажа (если HH отдает total_experience, забираем его)
+            if (root.TryGetProperty("total_experience", out var totalExp) && totalExp.ValueKind == JsonValueKind.Object)
+            {
+                if (totalExp.TryGetProperty("months", out var m) && m.ValueKind == JsonValueKind.Number)
+                {
+                    totalExperienceMonths = m.GetInt32();
+                }
+            }
+
             // 4. Ключевые навыки
             if (root.TryGetProperty("skill_set", out var skills) && skills.ValueKind == JsonValueKind.Array)
             {
@@ -245,17 +277,16 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
                 sb.AppendLine($"\nОбо мне:\n{aboutMe.GetString()}");
             }
 
-            // 6. ИСПРАВЛЕННЫЙ БЛОК: Образование
-            // В HH API 'education' на верхнем уровне — это объект со списками, 
-            // но иногда он приходит строкой или типом. Проверяем строго на Object.
+            // 6. Образование
             if (root.TryGetProperty("education", out var edu) && edu.ValueKind == JsonValueKind.Object)
             {
-                var levelName = edu.TryGetProperty("level", out var lvl) && lvl.ValueKind == JsonValueKind.Object &&
-                                lvl.TryGetProperty("name", out var ln)
-                    ? ln.GetString()
-                    : "Указано";
+                if (edu.TryGetProperty("level", out var lvl) && lvl.ValueKind == JsonValueKind.Object &&
+                    lvl.TryGetProperty("name", out var ln))
+                {
+                    educationLevel = ln.GetString();
+                }
 
-                sb.AppendLine($"\n=== ОБРАЗОВАНИЕ ({levelName}) ===");
+                sb.AppendLine($"\n=== ОБРАЗОВАНИЕ ({(educationLevel ?? "Указано")}) ===");
 
                 if (edu.TryGetProperty("primary", out var primaryEdu) && primaryEdu.ValueKind == JsonValueKind.Array)
                 {
@@ -285,12 +316,18 @@ public class HeadHunterService(HttpClient httpClient, ILogger<HeadHunterService>
             }
             else if (root.TryGetProperty("education", out var eduStr) && eduStr.ValueKind == JsonValueKind.String)
             {
-                // На всякий случай обрабатываем кейс, если там просто строка уровня (например "higher")
+                educationLevel = eduStr.GetString();
                 sb.AppendLine($"\n=== ОБРАЗОВАНИЕ ===");
-                sb.AppendLine($"Уровень: {eduStr.GetString()}");
+                sb.AppendLine($"Уровень: {educationLevel}");
             }
 
-            return sb.ToString();
+            return new HhResumeEnrichedResult(
+                sb.ToString(),
+                educationLevel,
+                lastJobTitle,
+                lastCompany,
+                totalExperienceMonths
+            );
         }
         catch (Exception ex)
         {

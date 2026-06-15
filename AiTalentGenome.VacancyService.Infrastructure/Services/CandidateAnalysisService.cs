@@ -20,7 +20,6 @@ public class CandidateAnalysisService(
     {
         logger.LogInformation("Запуск обогащения данных для отклика {Id}", applicationId);
 
-        // 1. Берем отклик из базы
         var application = await unitOfWork.Applications.GetByIdAsync(applicationId);
         if (application == null)
         {
@@ -30,24 +29,29 @@ public class CandidateAnalysisService(
 
         if (string.IsNullOrEmpty(application.HhResumeId) || application.HhResumeId == "no_id")
         {
-            logger.LogWarning("У отклика {Id} отсутствует корректный HhResumeId. Обогащение через HH невозможно.", applicationId);
+            logger.LogWarning("У отклика {Id} отсутствует корректный HhResumeId.", applicationId);
             return;
         }
 
         try
         {
-            // 2. Получаем полный Raw Текст резюме для AI
-            var rawText = await hhService.GetResumeRawTextAsync(accessToken, application.HhResumeId);
-            
-            if (string.IsNullOrEmpty(rawText))
+            // 1. Получаем полную инфоструктуру резюме
+            var enrichmentResult = await hhService.GetResumeRawTextAsync(accessToken, application.HhResumeId);
+
+            if (enrichmentResult == null || string.IsNullOrEmpty(enrichmentResult.RawText))
             {
-                logger.LogWarning("Не удалось собрать RawResumeText для отклика {Id}", applicationId);
+                logger.LogWarning("Не удалось собрать метаданные резюме для отклика {Id}", applicationId);
                 return;
             }
 
-            application.RawResumeText = rawText;
+            // Заполняем текстовые блоки и метаданные из HH
+            application.RawResumeText = enrichmentResult.RawText;
+            application.Education = enrichmentResult.Education ?? "Не указано";
+            application.LastJobTitle = enrichmentResult.LastJobTitle ?? "Не указана";
+            application.LastCompany = enrichmentResult.LastCompany ?? "Не указана";
+            application.TotalExperienceMonths = enrichmentResult.TotalExperienceMonths ?? 0;
 
-            // 3. Заполняем сопроводительное письмо, если его еще нет
+            // 2. Скачиваем сопроводительное письмо
             if (string.IsNullOrEmpty(application.CoverLetter) && !string.IsNullOrEmpty(application.HhNegotiationId))
             {
                 var coverLetter = await hhService.GetCoverLetterAsync(accessToken, application.HhNegotiationId);
@@ -57,36 +61,55 @@ public class CandidateAnalysisService(
                 }
             }
 
-            // 4. Заполняем CandidateSkills (в БД это List<string>)
+            // 3. Обновляем навыки массивом
             var skills = await hhService.GetResumeSkillsAsync(accessToken, application.HhResumeId);
             if (skills != null && skills.Count > 0)
             {
                 application.CandidateSkills = skills;
             }
 
-            // 5. Опционально: вытягиваем метаданные для быстрого отображения в UI
-            // Чтобы не дергать API повторно, можно было бы распарсить JSON прямо тут, 
-            // но для базового обогащения текста этого уже достаточно.
+            // 4. ЗАПОЛНЕНИЕ CRITICAL MISMATCHES (Бизнес-логика несоответствий)
+            // Получаем вакансию, чтобы сравнить KeySkills с навыками кандидата
+            var vacancy = await unitOfWork.Vacancies.GetByIdAsync(application.VacancyId);
+            if (vacancy != null && vacancy.KeySkills != null && vacancy.KeySkills.Count > 0)
+            {
+                var mismatches = new List<string>();
+                foreach (var requiredSkill in vacancy.KeySkills)
+                {
+                    // Проверяем, указан ли жесткий навык в массиве CandidateSkills или общем тексте резюме
+                    bool hasSkill =
+                        application.CandidateSkills.Any(s =>
+                            s.Equals(requiredSkill, StringComparison.OrdinalIgnoreCase))
+                        || (application.RawResumeText != null &&
+                            application.RawResumeText.Contains(requiredSkill, StringComparison.OrdinalIgnoreCase));
 
-            // 6. Сохраняем изменения
+                    if (!hasSkill)
+                    {
+                        mismatches.Add($"Отсутствует обязательный навык: {requiredSkill}");
+                    }
+                }
+
+                application.CriticalMismatches = mismatches;
+            }
+
+            // 5. Сохраняем обновленную сущность в БД
             unitOfWork.Applications.Update(application);
             await unitOfWork.SaveChangesAsync();
 
-            logger.LogInformation("Данные отклика {Id} успешно обогащены. RawResumeText сохранен.", applicationId);
-
-            // TODO: Шаг 7. Передача на глубокий анализ в AI-сервис (AnalyzerService в Python или локальный LLM через Ollama)
-            // Например: Вызов публикации в RabbitMQ или добавление новой задачи в Hangfire.
+            logger.LogInformation(
+                "Данные отклика {Id} успешно обогащены. Поля Education, LastJobTitle, LastCompany и CriticalMismatches заполнены.",
+                applicationId);
         }
         catch (Exception ex)
         {
             logger.LogError(ex, "Критическая ошибка при обогащении данных отклика {Id}", applicationId);
         }
     }
-    
+
     public async Task<(double AiScore, string AiAnalysisJson, List<string> ExtractedSkills)> AnalyzeApplicationAsync(
-        Vacancy vacancy, 
-        Domain.Entities.Application application, 
-        string userCriteria, 
+        Vacancy vacancy,
+        Domain.Entities.Application application,
+        string userCriteria,
         CancellationToken cancellationToken = default)
     {
         // 1. Формируем вложенный объект контекста вакансии
@@ -118,8 +141,8 @@ public class CandidateAnalysisService(
             var response = await grpcClient.AnalyzeCandidateAsync(request, cancellationToken: cancellationToken);
 
             return (
-                response.AiScore, 
-                response.AiAnalysisJson, 
+                response.AiScore,
+                response.AiAnalysisJson,
                 response.ExtractedSkills.ToList()
             );
         }

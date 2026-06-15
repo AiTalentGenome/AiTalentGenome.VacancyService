@@ -10,8 +10,6 @@ public class GetPagedApplicationsByVacancyHandler(IUnitOfWork unitOfWork)
 {
     public async Task<PagedApplicationsResponseDto> Handle(GetPagedApplicationsByVacancyQuery request, CancellationToken ct)
     {
-        // Предполагается, что в репозитории Applications реализован постраничный метод
-        // возвращающий кортеж (список_сущностей, общее_количество)
         var (apps, totalCount) = await unitOfWork.Applications.GetPagedFilteredAsync(
             request.VacancyId, 
             request.Page,
@@ -29,7 +27,8 @@ public class GetPagedApplicationsByVacancyHandler(IUnitOfWork unitOfWork)
             a.AiScore ?? 0,
             a.Status,
             a.CandidateSkills,
-            a.AppliedAt
+            a.AppliedAt,
+            a.AiAnalysisJson
         )).ToList();
 
         return new PagedApplicationsResponseDto(dtos, totalCount);

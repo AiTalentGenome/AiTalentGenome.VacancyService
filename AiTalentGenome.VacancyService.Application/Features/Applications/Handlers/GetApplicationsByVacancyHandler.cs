@@ -25,7 +25,8 @@ public class GetApplicationsByVacancyHandler(IUnitOfWork unitOfWork) : IRequestH
             a.AiScore ?? 0,
             a.Status,
             a.CandidateSkills,
-            a.AppliedAt
+            a.AppliedAt,
+            a.AiAnalysisJson
         )).ToList();
     }
 }

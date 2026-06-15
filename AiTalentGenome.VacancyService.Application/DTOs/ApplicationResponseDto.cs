@@ -11,5 +11,6 @@ public record ApplicationResponseDto(
     double? AiScore,
     DomainStatus Status,
     List<string> CandidateSkills,
-    DateTime AppliedAt
+    DateTime AppliedAt,
+    string? AiAnalysisJson
 );

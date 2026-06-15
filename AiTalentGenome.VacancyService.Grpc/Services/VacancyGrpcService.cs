@@ -326,7 +326,8 @@ public class VacancyGrpcService(
             AiScore = a.AiScore ?? 0.0,
             Status = (ContractStatus)(int)a.Status, // Прямой маппинг
             CandidateSkills = { a.CandidateSkills },
-            AppliedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(a.AppliedAt, DateTimeKind.Utc))
+            AppliedAt = Timestamp.FromDateTime(DateTime.SpecifyKind(a.AppliedAt, DateTimeKind.Utc)),
+            AiAnalysisJson = a.AiAnalysisJson ?? string.Empty
         }));
 
         return response;
